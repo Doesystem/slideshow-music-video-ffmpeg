@@ -1,0 +1,10 @@
+{
+  "name": "slideshow-music-video-ffmpeg",
+  "version": "1.0.0",
+  "description": "Create music video from image slideshow using ffmpeg",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate.mjs",
+    "render": "node render.mjs"
+  }
+}
