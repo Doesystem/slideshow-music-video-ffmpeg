@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "generate": "node generate.mjs",
-    "render": "node render.mjs"
+    "generate:portrait": "node generate.mjs --aspect 9:16",
+    "render": "node render.mjs",
+    "render:portrait": "node render.mjs --aspect 9:16"
   }
 }

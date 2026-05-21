@@ -1,9 +1,10 @@
 /**
  * render.mjs
- * อ่าน ffmpeg command จาก generate.mjs แล้วรันเลย
- * (generate + render ในขั้นตอนเดียว)
+ * generate composition แล้ว render ด้วย ffmpeg
  *
- * วิธีใช้: node render.mjs
+ * วิธีใช้:
+ *   node render.mjs               → 16:9 (default)
+ *   node render.mjs --aspect 9:16  → 9:16 portrait
  */
 
 import fs from "fs";
@@ -13,11 +14,21 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// run generate ก่อน
-console.log("🔧 Generating composition...\n");
-execSync("node generate.mjs", { stdio: "inherit", cwd: __dirname });
+// ส่ง arguments ทั้งหมดต่อไปยัง generate.mjs
+const args = process.argv.slice(2).join(" ");
 
-// อ่าน command จาก render.sh
+console.log("🔧 Generating composition...\n");
+execSync(`node generate.mjs ${args}`, { stdio: "inherit", cwd: __dirname });
+
+// อ่าน output path จาก meta ที่ generate เขียนไว้
+const metaFile = path.join(__dirname, ".render-meta.json");
+if (!fs.existsSync(metaFile)) {
+  console.error("❌ ไม่พบ .render-meta.json — generate.mjs อาจ error");
+  process.exit(1);
+}
+const { outputFile } = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+
+// อ่าน ffmpeg command จาก render.sh
 const cmdFile = path.join(__dirname, "render.sh");
 if (!fs.existsSync(cmdFile)) {
   console.error("❌ ไม่พบ render.sh — generate.mjs อาจ error");
@@ -25,7 +36,6 @@ if (!fs.existsSync(cmdFile)) {
 }
 
 const script = fs.readFileSync(cmdFile, "utf8");
-// ดึงเฉพาะ ffmpeg command (ข้าม shebang)
 const cmd = script
   .split("\n")
   .filter((l) => l.trim() && !l.startsWith("#"))
@@ -36,7 +46,7 @@ const cmd = script
 console.log("\n🎬 Rendering...\n");
 try {
   execSync(cmd, { stdio: "inherit", cwd: __dirname });
-  console.log("\n✅ Render เสร็จแล้ว → output.mp4");
+  console.log(`\n✅ Render เสร็จแล้ว → ${path.relative(__dirname, outputFile)}`);
 } catch (err) {
   console.error("\n❌ ffmpeg error:", err.message);
   process.exit(1);
