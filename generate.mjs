@@ -1,7 +1,7 @@
 /**
  * generate.mjs
  * สร้าง ffmpeg command สำหรับทำ slideshow music video
- * - random รูปจาก image/ จนครบความยาวเพลง
+ * - random รูปจาก image/ หรือ subfolder ที่ระบุ จนครบความยาวเพลง
  * - Ken Burns zoom-in แต่ละรูป
  * - crossfade ระหว่างรูปด้วย xfade filter
  * - ชื่อเพลง overlay ตลอดวิดีโอ
@@ -9,8 +9,10 @@
  * - รองรับ 16:9 (landscape) และ 9:16 (portrait)
  *
  * วิธีใช้:
- *   node generate.mjs              → 16:9 (default)
- *   node generate.mjs --aspect 9:16 → 9:16 portrait
+ *   node generate.mjs                          → รูปทั้งหมดใน image/, 16:9
+ *   node generate.mjs --aspect 9:16            → portrait
+ *   node generate.mjs --images nature          → รูปจาก image/nature/
+ *   node generate.mjs --images nature,people   → รูปจาก image/nature/ และ image/people/
  */
 
 import fs from "fs";
@@ -22,7 +24,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ===== parse arguments =====
 const args = process.argv.slice(2);
-const aspectArg = args[args.indexOf("--aspect") + 1] ?? "16:9";
+
+// helper: หาค่าของ flag เช่น --aspect 9:16 → "9:16"
+function getArg(flag, defaultVal = null) {
+  const idx = args.indexOf(flag);
+  if (idx === -1 || idx + 1 >= args.length) return defaultVal;
+  return args[idx + 1];
+}
+
+const aspectArg = getArg("--aspect", "16:9");
+const imagesArg = getArg("--images", null); // "nature" หรือ "nature,people"
 
 const ASPECT_PRESETS = {
   "16:9": { width: 1920, height: 1080, label: "landscape" },
@@ -52,7 +63,6 @@ const FONT_SIZE = ASPECT_LABEL === "portrait" ? 72 : 64;
 
 // --- สร้าง output/ ถ้ายังไม่มี ---
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR);
-
 // --- หาไฟล์เพลงแรกใน song/ ---
 const songFiles = fs
   .readdirSync(SONG_DIR)
@@ -86,16 +96,46 @@ try {
   process.exit(1);
 }
 
-// --- หารูปทั้งหมดใน image/ ---
-const images = fs
-  .readdirSync(IMAGE_DIR)
-  .filter((f) => /\.(jpe?g|png|webp|gif)$/i.test(f))
-  .map((f) => path.join(IMAGE_DIR, f));
+// --- หารูปทั้งหมดจาก folder ที่ระบุ ---
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif)$/i;
+
+function scanImages(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => IMAGE_EXT.test(f))
+    .map((f) => path.join(dir, f));
+}
+
+let images;
+let imageSourceLabel; // สำหรับแสดงใน log
+
+if (imagesArg) {
+  // --images nature  หรือ  --images nature,people,city
+  const folders = imagesArg.split(",").map((s) => s.trim()).filter(Boolean);
+  const invalidFolders = folders.filter((f) => !fs.existsSync(path.join(IMAGE_DIR, f)));
+  if (invalidFolders.length > 0) {
+    console.error(`❌ ไม่พบ folder: ${invalidFolders.map((f) => `image/${f}`).join(", ")}`);
+    console.error(`   folder ที่มีอยู่: ${fs.readdirSync(IMAGE_DIR).filter((f) => fs.statSync(path.join(IMAGE_DIR, f)).isDirectory()).join(", ") || "(ไม่มี)"}`);
+    process.exit(1);
+  }
+  images = folders.flatMap((f) => scanImages(path.join(IMAGE_DIR, f)));
+  imageSourceLabel = folders.map((f) => `image/${f}`).join(", ");
+} else {
+  // ไม่ระบุ --images → ใช้รูปทั้งหมดใน image/ (รวม subfolder)
+  const topLevel = scanImages(IMAGE_DIR);
+  const subDirs  = fs.readdirSync(IMAGE_DIR)
+    .filter((f) => fs.statSync(path.join(IMAGE_DIR, f)).isDirectory())
+    .flatMap((d) => scanImages(path.join(IMAGE_DIR, d)));
+  images = [...topLevel, ...subDirs];
+  imageSourceLabel = "image/ (ทั้งหมด)";
+}
 
 if (images.length === 0) {
-  console.error("❌ ไม่พบรูปภาพใน image/");
+  console.error(`❌ ไม่พบรูปภาพใน ${imageSourceLabel}`);
   process.exit(1);
 }
+
+console.log(`🖼  รูปจาก: ${imageSourceLabel} (${images.length} ไฟล์)`);
 
 // --- random รูปโดยไม่ให้ซ้ำกัน 2 ครั้งติดกัน ---
 function pickRandom(pool, lastPick) {

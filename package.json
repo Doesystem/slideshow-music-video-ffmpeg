@@ -1,12 +1,16 @@
 {
-  "name": "slideshow-music-video-ffmpeg",
-  "version": "1.0.0",
-  "description": "Create music video from image slideshow using ffmpeg",
-  "type": "module",
-  "scripts": {
-    "generate": "node generate.mjs",
-    "generate:portrait": "node generate.mjs --aspect 9:16",
-    "render": "node render.mjs",
-    "render:portrait": "node render.mjs --aspect 9:16"
-  }
+    "name": "slideshow-music-video-ffmpeg",
+    "version": "1.0.0",
+    "description": "Create music video from image slideshow using ffmpeg",
+    "type": "module",
+    "scripts": {
+        "generate": "node generate.mjs",
+        "generate:portrait": "node generate.mjs --aspect 9:16",
+
+        "render": "node render.mjs",
+        "render:portrait": "node render.mjs --aspect 9:16",
+
+        "render:nature": "node render.mjs --images nature",
+        "render:nature:portrait": "node render.mjs --images nature --aspect 9:16"
+    }
 }
