@@ -15,6 +15,9 @@ slideshow-music-video-ffmpeg/
 │   └── people/
 │       └── portrait.jpg
 ├── song/                   # ไฟล์เพลง (mp3, aac, wav, flac, m4a)
+├── effects/                # ไฟล์ effect overlay (mp4, webm, mov) — optional
+│   ├── rain.mp4            # พื้นหลังสีดำ → ใช้ --effect-mode screen
+│   └── fog.mp4             # พื้นหลังสีเขียว → ใช้ --effect-mode chromakey
 ├── output/                 # ผลลัพธ์ (auto-generated)
 │   ├── ชื่อเพลง_landscape.mp4
 │   └── ชื่อเพลง_portrait.mp4
@@ -48,6 +51,16 @@ node render.mjs --images nature --aspect 9:16
 # รวมหลาย subfolder (คั่นด้วย ,)
 node render.mjs --images nature,people
 node render.mjs --images nature,people --aspect 9:16
+
+# เพิ่ม effect overlay — พื้นหลังสีดำ (ชื่อไฟล์ลงท้าย _black)
+node render.mjs --effect rain_black.mp4
+node render.mjs --effect snow_black.mp4 --aspect 9:16
+
+# เพิ่ม effect overlay — พื้นหลังสีเขียว (ชื่อไฟล์ลงท้าย _green)
+node render.mjs --effect fog_green.mp4
+
+# ปรับสี chroma key (ถ้าพื้นหลังไม่ใช่สีเขียวมาตรฐาน)
+node render.mjs --effect fog_green.mp4 --chroma-color 0x00FF00
 ```
 
 output จะถูกบันทึกที่ `output/<ชื่อเพลง>_landscape.mp4` หรือ `output/<ชื่อเพลง>_portrait.mp4`
@@ -76,8 +89,34 @@ node render.mjs
 |---|---|---|
 | `--aspect` | `16:9` (default) / `9:16` | aspect ratio ของ output |
 | `--images` | ชื่อ subfolder | random รูปเฉพาะ subfolder ที่ระบุ คั่นหลาย folder ด้วย `,` |
+| `--effect` | ชื่อไฟล์ใน `effects/` | ไฟล์ effect overlay ชื่อต้องลงท้ายด้วย `_black` หรือ `_green` |
+| `--effect-opacity` | `0.4` (default), `0.0`-`1.0` | ความเข้มของ effect — น้อย = จาง, มาก = ชัด |
+| `--chroma-color` | `0x00FF00` (default) | ปรับสี chroma key สำหรับไฟล์ `_green` ที่ไม่ใช่สีเขียวมาตรฐาน |
 
 ถ้าไม่ระบุ `--images` จะใช้รูปทั้งหมดใน `image/` รวมทุก subfolder
+
+## Effect Overlay
+
+วางไฟล์ effect ไว้ใน `effects/` folder โดย **ตั้งชื่อให้ลงท้ายด้วย `_black` หรือ `_green`** เพื่อบอก mode อัตโนมัติ
+
+| Suffix | พื้นหลัง | Blend mode | เหมาะกับ |
+|---|---|---|---|
+| `_black` | สีดำ | screen | ฝน, หิมะ, ประกายไฟ, แสง |
+| `_green` | สีเขียว | chromakey | ควัน, หมอก, เอฟเฟกต์สีอ่อน |
+
+ตัวอย่างชื่อไฟล์: `rain_black.mp4`, `snow_black.mp4`, `fog_green.mp4`
+
+```bash
+node render.mjs --effect rain_black.mp4
+node render.mjs --effect fog_green.mp4
+node render.mjs --effect snow_black.mp4 --images nature --aspect 9:16
+
+# ปรับความเข้มของ effect (default: 0.5)
+node render.mjs --effect rain_black.mp4 --effect-opacity 0.3   # จางลง
+node render.mjs --effect rain_black.mp4 --effect-opacity 0.8   # เข้มขึ้น
+```
+
+แหล่งโหลด effect ฟรี: [Pixabay](https://pixabay.com/videos/search/rain%20overlay/) · [Pexels](https://www.pexels.com/search/videos/rain%20overlay/)
 
 ## Config
 

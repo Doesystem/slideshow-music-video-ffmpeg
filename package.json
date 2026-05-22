@@ -11,6 +11,8 @@
         "render:portrait": "node render.mjs --aspect 9:16",
 
         "render:nature": "node render.mjs --images nature",
-        "render:nature:portrait": "node render.mjs --images nature --aspect 9:16"
+        "render:nature:portrait": "node render.mjs --images nature --aspect 9:16",
+
+        "render:sad": "node render.mjs --images sad --effect rain_3_black.mp4 --effect-opacity 0.2"
     }
 }

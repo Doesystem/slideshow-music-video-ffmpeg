@@ -5,14 +5,17 @@
  * - Ken Burns zoom-in แต่ละรูป
  * - crossfade ระหว่างรูปด้วย xfade filter
  * - ชื่อเพลง overlay ตลอดวิดีโอ
+ * - effect overlay (ฝน/หิมะ/แสง) รองรับ black background และ green screen
  * - mix เพลงจาก song/
  * - รองรับ 16:9 (landscape) และ 9:16 (portrait)
  *
  * วิธีใช้:
- *   node generate.mjs                          → รูปทั้งหมดใน image/, 16:9
- *   node generate.mjs --aspect 9:16            → portrait
- *   node generate.mjs --images nature          → รูปจาก image/nature/
- *   node generate.mjs --images nature,people   → รูปจาก image/nature/ และ image/people/
+ *   node generate.mjs                                    → รูปทั้งหมดใน image/, 16:9
+ *   node generate.mjs --aspect 9:16                      → portrait
+ *   node generate.mjs --images nature                    → รูปจาก image/nature/
+ *   node generate.mjs --images nature,people             → รูปจาก image/nature/ และ image/people/
+ *   node generate.mjs --effect effects/rain.mp4          → overlay effect (black bg → screen)
+ *   node generate.mjs --effect effects/fog.mp4 --effect-mode chromakey → green screen
  */
 
 import fs from "fs";
@@ -32,8 +35,11 @@ function getArg(flag, defaultVal = null) {
   return args[idx + 1];
 }
 
-const aspectArg = getArg("--aspect", "16:9");
-const imagesArg = getArg("--images", null); // "nature" หรือ "nature,people"
+const aspectArg     = getArg("--aspect", "16:9");
+const imagesArg     = getArg("--images", null);
+const effectArg     = getArg("--effect", null);
+const effectOpacity = parseFloat(getArg("--effect-opacity", "0.4")); // 0.0-1.0
+const chromaColor   = getArg("--chroma-color", "0x00FF00");
 
 const ASPECT_PRESETS = {
   "16:9": { width: 1920, height: 1080, label: "landscape" },
@@ -135,7 +141,53 @@ if (images.length === 0) {
   process.exit(1);
 }
 
-console.log(`🖼  รูปจาก: ${imageSourceLabel} (${images.length} ไฟล์)`);
+// --- validate และเตรียม effect ---
+const EFFECTS_DIR = path.join(__dirname, "effects");
+let effectFile = null;
+let effectMode = null; // จะถูก set จากชื่อไฟล์
+
+if (effectArg) {
+  // รองรับทั้ง path เต็มและชื่อไฟล์อย่างเดียว
+  const candidates = [
+    path.resolve(__dirname, effectArg),
+    path.join(EFFECTS_DIR, effectArg),
+    path.join(EFFECTS_DIR, path.basename(effectArg)),
+  ];
+  effectFile = candidates.find((p) => fs.existsSync(p)) ?? null;
+
+  if (!effectFile) {
+    console.error(`❌ ไม่พบไฟล์ effect: ${effectArg}`);
+    if (fs.existsSync(EFFECTS_DIR)) {
+      const available = fs.readdirSync(EFFECTS_DIR)
+        .filter((f) => /\.(mp4|webm|mov|avi)$/i.test(f));
+      console.error(`   ไฟล์ใน effects/: ${available.join(", ") || "(ไม่มี)"}`);
+    } else {
+      console.error(`   ยังไม่มี folder effects/ — สร้างแล้ววางไฟล์ effect ไว้`);
+      fs.mkdirSync(EFFECTS_DIR);
+    }
+    process.exit(1);
+  }
+
+  // อ่าน mode จากชื่อไฟล์ — ลงท้ายด้วย _black หรือ _green
+  const baseName = path.basename(effectFile, path.extname(effectFile)).toLowerCase();
+  if (baseName.endsWith("_black")) {
+    effectMode = "screen";
+  } else if (baseName.endsWith("_green")) {
+    effectMode = "chromakey";
+  } else {
+    console.error(`❌ ชื่อไฟล์ effect ต้องลงท้ายด้วย _black หรือ _green`);
+    console.error(`   เช่น: rain_black.mp4, fog_green.mp4`);
+    console.error(`   ได้รับ: ${path.basename(effectFile)}`);
+    process.exit(1);
+  }
+
+  if (isNaN(effectOpacity) || effectOpacity < 0 || effectOpacity > 1) {
+    console.error(`❌ --effect-opacity ต้องเป็นตัวเลข 0.0-1.0 (ได้รับ: ${getArg("--effect-opacity")})`);
+    process.exit(1);
+  }
+
+  console.log(`✨ Effect: ${path.basename(effectFile)} → mode: ${effectMode}, opacity: ${effectOpacity}`);
+}
 
 // --- random รูปโดยไม่ให้ซ้ำกัน 2 ครั้งติดกัน ---
 function pickRandom(pool, lastPick) {
@@ -190,6 +242,14 @@ for (const img of slides) {
 // --- input: เพลง ---
 inputs.push(`-i "${SONG_FILE}"`);
 const audioInputIndex = slides.length;
+
+// --- input: effect video (ถ้ามี) ---
+let effectInputIndex = null;
+if (effectFile) {
+  // loop effect ตลอดความยาวเพลง
+  inputs.push(`-stream_loop -1 -t ${SONG_DURATION} -i "${effectFile}"`);
+  effectInputIndex = slides.length + 1;
+}
 
 // --- filter per slide: scale → crop → zoompan ---
 const scaledLabels = [];
@@ -306,7 +366,8 @@ let chainIn = "xfall";
 
 // สร้าง color schedule: กำหนดว่าแต่ละช่วงเวลาใช้สีอะไร
 // random สีโดยไม่ซ้ำกัน 2 ครั้งติดกัน
-const totalSlots = Math.ceil(SONG_DURATION / COLOR_INTERVAL) + 1;
+// ใช้ SONG_DURATION เป็นตัวกำหนด ไม่ให้ slot เกินความยาวเพลง
+const totalSlots = Math.ceil(SONG_DURATION / COLOR_INTERVAL);
 const colorSchedule = [];
 let lastColor = null;
 for (let i = 0; i < totalSlots; i++) {
@@ -324,6 +385,7 @@ const segments = [];
 for (let i = 0; i < colorSchedule.length; i++) {
   const tStart = i * COLOR_INTERVAL;
   const tEnd   = Math.min((i + 1) * COLOR_INTERVAL, SONG_DURATION);
+  if (tStart >= SONG_DURATION) break; // ไม่สร้าง segment ที่เกินความยาวเพลง
   if (segments.length > 0 && segments[segments.length - 1].color === colorSchedule[i]) {
     segments[segments.length - 1].end = tEnd;
   } else {
@@ -333,25 +395,25 @@ for (let i = 0; i < colorSchedule.length; i++) {
 
 // สร้าง drawtext layer ต่อ segment
 // แต่ละ layer วาดทุกบรรทัดของชื่อเพลง
+// finalDrawtextLabel จะเก็บ label สุดท้ายที่ drawtext chain ผลิตออกมา
+let finalDrawtextLabel = "xfall"; // จะถูก update ทุก segment
+
 for (let si = 0; si < segments.length; si++) {
   const { color, start, end } = segments[si];
   const isLast = si === segments.length - 1;
-  const outLabel = isLast ? "vout" : `dt${si}`;
+  // ถ้ามี effect จะต่อ chain ไปที่ "preeffect" แทน "vout"
+  const segOutLabel = isLast ? (effectFile ? "preeffect" : "vout") : `dt${si}`;
 
   // enable เฉพาะช่วงเวลานี้
   const enableExpr = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
 
-  // วาดทีละบรรทัด โดย chain ผ่าน drawtext ซ้อนกัน
-  // บรรทัดแรก: [chainIn] → [tmp_si_0]
-  // บรรทัดถัดไป: [tmp_si_N] → [tmp_si_N+1]
-  // บรรทัดสุดท้าย: → [outLabel]
   for (let li = 0; li < titleLines.length; li++) {
     const lineText = escapeDrawtext(titleLines[li]);
     const lineY    = textBlockY + li * lineHeight;
     const isLastLine = li === titleLines.length - 1;
 
     const lineIn  = li === 0 ? chainIn : `tmp_${si}_${li - 1}`;
-    const lineOut = isLastLine ? outLabel : `tmp_${si}_${li}`;
+    const lineOut = isLastLine ? segOutLabel : `tmp_${si}_${li}`;
 
     filterParts.push(
       `[${lineIn}]drawtext=` +
@@ -366,16 +428,48 @@ for (let si = 0; si < segments.length; si++) {
     );
   }
 
-  chainIn = outLabel;
+  chainIn = segOutLabel;
+  finalDrawtextLabel = segOutLabel;
 }
 
 console.log(`🎨 Text: ${lineCount} บรรทัด, ${segments.length} color segments`);
 
-const filterComplex = filterParts.join("; ");
+// --- effect overlay (ถ้ามี) ---
+// drawtext chain จบที่ "preeffect" (ถูก set ใน segOutLabel ด้านบนแล้ว)
+// ต่อ effect filter → "vout"
+if (effectFile) {
+  // scale effect ให้ตรงกับ canvas
+  const scaleFilter =
+    `[${effectInputIndex}:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,` +
+    `crop=${WIDTH}:${HEIGHT},setsar=1,fps=${FPS}[effraw]`;
+  filterParts.push(scaleFilter);
+
+  if (effectMode === "screen") {
+    // ลด brightness ของ effect ตาม opacity ก่อน blend
+    // lut=r/g/b: คูณแต่ละ channel ด้วย opacity (0-255 range)
+    const mul = Math.round(effectOpacity * 255);
+    filterParts.push(
+      `[effraw]lut=r='min(val*${effectOpacity.toFixed(3)},255)':` +
+      `g='min(val*${effectOpacity.toFixed(3)},255)':` +
+      `b='min(val*${effectOpacity.toFixed(3)},255)'[effdim]`
+    );
+    filterParts.push(`[preeffect][effdim]blend=all_mode=screen[vout]`);
+  } else {
+    // chromakey: ตัดสีพื้นหลังออก แล้วลด opacity ด้วย overlay format
+    filterParts.push(
+      `[effraw]chromakey=color=${chromaColor}:similarity=0.3:blend=0.05,` +
+      `colorchannelmixer=aa=${effectOpacity.toFixed(3)}[effkey]`
+    );
+    filterParts.push(`[preeffect][effkey]overlay=0:0:format=auto[vout]`);
+  }
+
+  console.log(`✨ Effect filter: ${effectMode} mode, opacity: ${effectOpacity}`);
+}
 
 // --- บันทึก filter_complex ลงไฟล์แยก ---
 // ใช้ -filter_complex_script แทนการใส่ใน command line
 // เพื่อหลีกเลี่ยง Windows CMD limit (~8191 chars)
+const filterComplex = filterParts.join("; ");
 const filterScriptFile = path.join(__dirname, "filter.txt");
 fs.writeFileSync(filterScriptFile, filterComplex, "utf8");
 
